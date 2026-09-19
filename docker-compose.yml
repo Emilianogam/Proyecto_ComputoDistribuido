@@ -1,0 +1,129 @@
+services:
+
+  # ---------- Base de datos ----------
+  # No expone puerto al exterior. Solo los servicios la ven,
+  # por la red interna de Docker, usando "postgres" como hostname.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: distribuidos
+    volumes:
+      - datos_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------- Servicio A: usuarios (3 instancias) ----------
+  usuarios-1:
+    build: ./servicio-usuarios
+    environment:
+      INSTANCIA_ID: usuarios-1
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  usuarios-2:
+    build: ./servicio-usuarios
+    environment:
+      INSTANCIA_ID: usuarios-2
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  usuarios-3:
+    build: ./servicio-usuarios
+    environment:
+      INSTANCIA_ID: usuarios-3
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------- Servicio B: tareas (3 instancias) ----------
+  tareas-1:
+    build: ./servicio-tareas
+    environment:
+      INSTANCIA_ID: tareas-1
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  tareas-2:
+    build: ./servicio-tareas
+    environment:
+      INSTANCIA_ID: tareas-2
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  tareas-3:
+    build: ./servicio-tareas
+    environment:
+      INSTANCIA_ID: tareas-3
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------- Servicio C: categorias (3 instancias) ----------
+  categorias-1:
+    build: ./servicio-categorias
+    environment:
+      INSTANCIA_ID: categorias-1
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  categorias-2:
+    build: ./servicio-categorias
+    environment:
+      INSTANCIA_ID: categorias-2
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  categorias-3:
+    build: ./servicio-categorias
+    environment:
+      INSTANCIA_ID: categorias-3
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------- Middleware: service discovery + load balancer ----------
+  gateway:
+    build: ./gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - usuarios-1
+      - usuarios-2
+      - usuarios-3
+      - tareas-1
+      - tareas-2
+      - tareas-3
+      - categorias-1
+      - categorias-2
+      - categorias-3
+
+  # ---------- Frontend ----------
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+
+volumes:
+  datos_postgres:

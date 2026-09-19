@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gestor de tareas - Sistema distribuido</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+
+  <header>
+    <h1>Gestor de tareas</h1>
+    <p>Frontend &rarr; Gateway (localhost:8000) &rarr; 9 instancias de servicio &rarr; PostgreSQL</p>
+  </header>
+
+  <section class="registro">
+    <div class="registro-encabezado">
+      <h2>Registro de servicios</h2>
+      <div>
+        <button onclick="cargarServicios()">Actualizar</button>
+        <button onclick="probarBalanceo()">Probar balanceo (9 peticiones)</button>
+      </div>
+    </div>
+    <div id="servicios"></div>
+    <pre id="bitacora"></pre>
+  </section>
+
+  <main>
+
+    <div class="panel">
+      <h2>Usuarios</h2>
+      <form onsubmit="crearUsuario(event)">
+        <input id="usuario-nombre" placeholder="Nombre" required>
+        <input id="usuario-email" placeholder="Correo">
+        <button type="submit">Agregar</button>
+      </form>
+      <p class="instancia" id="usuarios-instancia"></p>
+      <ul id="usuarios-lista"></ul>
+    </div>
+
+    <div class="panel">
+      <h2>Tareas</h2>
+      <form onsubmit="crearTarea(event)">
+        <input id="tarea-titulo" placeholder="Titulo" required>
+        <button type="submit">Agregar</button>
+      </form>
+      <p class="instancia" id="tareas-instancia"></p>
+      <ul id="tareas-lista"></ul>
+    </div>
+
+    <div class="panel">
+      <h2>Categorias</h2>
+      <form onsubmit="crearCategoria(event)">
+        <input id="categoria-nombre" placeholder="Nombre" required>
+        <input id="categoria-color" placeholder="Color">
+        <button type="submit">Agregar</button>
+      </form>
+      <p class="instancia" id="categorias-instancia"></p>
+      <ul id="categorias-lista"></ul>
+    </div>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

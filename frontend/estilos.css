@@ -1,0 +1,102 @@
+* { box-sizing: border-box; }
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 24px;
+  background: #f4f5f7;
+  color: #1c1c1e;
+}
+
+header h1 { margin: 0 0 4px; font-size: 24px; }
+header p { margin: 0 0 24px; color: #666; font-size: 14px; }
+
+.registro {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.registro-encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.registro h2 { margin: 0; font-size: 16px; }
+
+#servicios {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+#servicios ul { list-style: none; padding: 0; margin: 4px 0 0; }
+#servicios li { padding: 2px 0; }
+
+.viva::before { content: "● "; color: #1a9e4b; }
+.caida::before { content: "● "; color: #c0392b; }
+
+#bitacora {
+  background: #1c1c1e;
+  color: #7ee787;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  min-height: 20px;
+}
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.panel h2 { margin: 0 0 12px; font-size: 18px; }
+
+form { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+input { flex: 1; min-width: 100px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; }
+
+button {
+  padding: 6px 12px;
+  border: 1px solid #1c1c1e;
+  background: #1c1c1e;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+button:hover { background: #333; }
+
+.instancia { font-size: 12px; color: #888; margin: 4px 0 8px; min-height: 16px; }
+
+ul { list-style: none; padding: 0; margin: 0; }
+
+li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid #eee;
+  font-size: 14px;
+}
+
+li button { background: #fff; color: #c0392b; border-color: #ddd; padding: 2px 8px; }
+li button:hover { background: #fdecea; }
