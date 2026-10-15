@@ -10,12 +10,13 @@
 
   <header>
     <h1>Gestor de tareas</h1>
-    <p>Frontend &rarr; Gateway (localhost:8000) &rarr; 9 instancias de servicio &rarr; PostgreSQL</p>
+    <p>Frontend &rarr; nginx (localhost:8000) &rarr; 9 instancias de servicio &rarr; PostgreSQL<br>
+       Service discovery con Consul &mdash; <a href="http://localhost:8500" target="_blank">abrir la interfaz de Consul</a></p>
   </header>
 
   <section class="registro">
     <div class="registro-encabezado">
-      <h2>Registro de servicios</h2>
+      <h2>Registro de servicios (Consul)</h2>
       <div>
         <button onclick="cargarServicios()">Actualizar</button>
         <button onclick="probarBalanceo()">Probar balanceo (9 peticiones)</button>

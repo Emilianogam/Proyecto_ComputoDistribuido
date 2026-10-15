@@ -17,14 +17,33 @@ services:
       timeout: 3s
       retries: 10
 
+  # ---------- Service discovery ----------
+  # Consul es el registro de servicios. Las instancias se dan de alta solas
+  # al arrancar y se borran al apagarse. Consul les hace un health check
+  # contra /heartbeat cada 10 segundos.
+  # El puerto 8500 se expone para poder abrir su interfaz en el navegador.
+  consul:
+    image: hashicorp/consul:1.19
+    command: agent -dev -client=0.0.0.0 -ui
+    ports:
+      - "8500:8500"
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # ---------- Servicio A: usuarios (3 instancias) ----------
   usuarios-1:
     build: ./servicio-usuarios
     environment:
       INSTANCIA_ID: usuarios-1
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   usuarios-2:
@@ -32,8 +51,11 @@ services:
     environment:
       INSTANCIA_ID: usuarios-2
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   usuarios-3:
@@ -41,8 +63,11 @@ services:
     environment:
       INSTANCIA_ID: usuarios-3
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   # ---------- Servicio B: tareas (3 instancias) ----------
@@ -51,8 +76,11 @@ services:
     environment:
       INSTANCIA_ID: tareas-1
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   tareas-2:
@@ -60,8 +88,11 @@ services:
     environment:
       INSTANCIA_ID: tareas-2
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   tareas-3:
@@ -69,8 +100,11 @@ services:
     environment:
       INSTANCIA_ID: tareas-3
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   # ---------- Servicio C: categorias (3 instancias) ----------
@@ -79,8 +113,11 @@ services:
     environment:
       INSTANCIA_ID: categorias-1
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   categorias-2:
@@ -88,8 +125,11 @@ services:
     environment:
       INSTANCIA_ID: categorias-2
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   categorias-3:
@@ -97,25 +137,43 @@ services:
     environment:
       INSTANCIA_ID: categorias-3
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
+      CONSUL_URL: http://consul:8500
     depends_on:
       postgres:
         condition: service_healthy
+      consul:
+        condition: service_healthy
 
-  # ---------- Middleware: service discovery + load balancer ----------
-  gateway:
-    build: ./gateway
+  # ---------- Reverse proxy, gateway y load balancer ----------
+  # nginx es la unica puerta de entrada al backend. Rutea por el primer
+  # segmento de la ruta y balancea con round robin entre las instancias
+  # de cada upstream. Tambien reenvia a la API de Consul.
+  nginx:
+    build: ./nginx
     ports:
       - "8000:8000"
+    restart: unless-stopped
     depends_on:
-      - usuarios-1
-      - usuarios-2
-      - usuarios-3
-      - tareas-1
-      - tareas-2
-      - tareas-3
-      - categorias-1
-      - categorias-2
-      - categorias-3
+      consul:
+        condition: service_healthy
+      usuarios-1:
+        condition: service_started
+      usuarios-2:
+        condition: service_started
+      usuarios-3:
+        condition: service_started
+      tareas-1:
+        condition: service_started
+      tareas-2:
+        condition: service_started
+      tareas-3:
+        condition: service_started
+      categorias-1:
+        condition: service_started
+      categorias-2:
+        condition: service_started
+      categorias-3:
+        condition: service_started
 
   # ---------- Frontend ----------
   frontend:
@@ -123,7 +181,7 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - gateway
+      - nginx
 
 volumes:
   datos_postgres:

@@ -128,6 +128,11 @@ func main() {
 		puerto = "8080"
 	}
 
+	// Service discovery dinamico: la instancia se registra sola en Consul
+	// y se borra del registro cuando el contenedor se detiene.
+	registrarEnConsul("categorias", instanciaID, puerto)
+	go esperarApagado(instanciaID)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/categorias", conHeaders(categoriasHandler))
 	mux.HandleFunc("/categorias/", conHeaders(categoriaHandler))

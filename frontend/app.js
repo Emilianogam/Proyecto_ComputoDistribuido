@@ -1,10 +1,13 @@
-// El frontend solo conoce el gateway. Nunca llama a un servicio directo.
-const GATEWAY = "http://localhost:8000";
+// El frontend solo conoce al proxy de nginx. Nunca llama a un servicio directo.
+const PROXY = "http://localhost:8000";
+
+// Los tres servicios que estan registrados en Consul.
+const SERVICIOS = ["categorias", "tareas", "usuarios"];
 
 // peticion hace el fetch y regresa los datos junto con la instancia
 // que respondio, que viene en el header X-Instancia.
 async function peticion(ruta, opciones = {}) {
-  const resp = await fetch(GATEWAY + ruta, {
+  const resp = await fetch(PROXY + ruta, {
     headers: { "Content-Type": "application/json" },
     ...opciones,
   });
@@ -15,7 +18,7 @@ async function peticion(ruta, opciones = {}) {
     return { datos: null, instancia };
   }
   if (!resp.ok) {
-    throw new Error("El gateway respondio " + resp.status);
+    throw new Error("nginx respondio " + resp.status);
   }
   return { datos: await resp.json(), instancia };
 }
@@ -31,27 +34,45 @@ function escribirBitacora(texto) {
 }
 
 // ---------- Registro de servicios ----------
+// cargarServicios le pregunta a Consul, a traves de nginx, que instancias
+// hay registradas y cual es su estado de salud. Antes esto salia de un
+// archivo estatico; ahora sale del registro dinamico.
 
 async function cargarServicios() {
-  const resp = await fetch(GATEWAY + "/servicios");
-  const registro = await resp.json();
-
   const contenedor = document.getElementById("servicios");
   contenedor.innerHTML = "";
 
-  for (const servicio of Object.keys(registro).sort()) {
+  for (const servicio of SERVICIOS) {
+    const resp = await fetch(PROXY + "/consul/v1/health/service/" + servicio);
+    const entradas = await resp.json();
+
+    entradas.sort((a, b) => a.Service.ID.localeCompare(b.Service.ID));
+
     const div = document.createElement("div");
     const titulo = document.createElement("strong");
     titulo.textContent = servicio;
     div.appendChild(titulo);
 
     const ul = document.createElement("ul");
-    for (const inst of registro[servicio]) {
+
+    if (entradas.length === 0) {
       const li = document.createElement("li");
-      li.className = inst.viva ? "viva" : "caida";
-      li.textContent = inst.url;
+      li.className = "caida";
+      li.textContent = "sin instancias registradas";
       ul.appendChild(li);
     }
+
+    for (const entrada of entradas) {
+      // Consul marca "passing" cuando el health check responde bien.
+      const viva = entrada.Checks.every((c) => c.Status === "passing");
+
+      const li = document.createElement("li");
+      li.className = viva ? "viva" : "caida";
+      li.textContent =
+        entrada.Service.ID + " (" + entrada.Service.Address + ":" + entrada.Service.Port + ")";
+      ul.appendChild(li);
+    }
+
     div.appendChild(ul);
     contenedor.appendChild(div);
   }
