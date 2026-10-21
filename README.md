@@ -8,9 +8,14 @@ Proyecto final de Computo Distribuido.
 |---|---|
 | 1 | Frontend, 3 servicios con 3 instancias cada uno, base de datos, middleware propio en Go con service discovery estatico y round robin |
 | 2 | Service discovery dinamico con **Consul**, y **nginx** como reverse proxy, gateway y load balancer |
+| 3 | **gRPC con protobuf** en la capa de backends: comunicacion entre servicios y entre el load balancer y los servicios |
 
 En la entrega 2 el middleware escrito en Go se reemplazo por nginx, y el
 archivo estatico `services.json` se reemplazo por el registro de Consul.
+
+En la entrega 3 cada servicio expone, ademas de su API HTTP, una API gRPC
+definida con protobuf. La API HTTP se conserva porque el navegador no habla
+gRPC; las llamadas entre servicios si usan gRPC.
 
 ## Arquitectura actual
 
@@ -35,6 +40,18 @@ archivo estatico `services.json` se reemplazo por el registro de Consul.
    Consul (localhost:8500) registra las 9 instancias
    y les hace health check cada 10 segundos.
 ```
+
+Cada instancia escucha en dos puertos: 8080 para HTTP y 9090 para gRPC.
+nginx balancea los dos protocolos.
+
+| Puerto en el host | Protocolo | Destino |
+|---|---|---|
+| 3000 | HTTP | frontend |
+| 8000 | HTTP  | las 9 instancias, segun la ruta |
+| 9001 | gRPC  | las 3 instancias de usuarios |
+| 9002 | gRPC  | las 3 instancias de tareas |
+| 9003 | gRPC  | las 3 instancias de categorias |
+| 8500 | HTTP  | interfaz de Consul |
 
 Catorce contenedores. Solo tres exponen puerto al exterior: el frontend
 (3000), nginx (8000) y la interfaz de Consul (8500). Los nueve servicios y la
@@ -121,6 +138,97 @@ una peticion nginx deja de mandarle trafico durante diez segundos.
 catorce contenedores y hace una prueba de humo contra Consul y los tres
 servicios.
 
+### gRPC y protobuf
+
+Cada servicio expone dos APIs sobre los mismos datos: la HTTP en el puerto
+8080, que usa el navegador, y la gRPC en el 9090, que usan los otros
+servicios y las pruebas con grpcurl.
+
+**Los contratos** estan en la carpeta `proto/`, uno por servicio. Ahi se
+definen los mensajes y los metodos. De esos archivos se genera el codigo Go
+del servidor y del cliente con `protoc`; el codigo generado vive en
+`pb/` dentro de cada servicio y esta versionado en el repo. Para
+regenerarlo esta `generar-proto.sh`.
+
+Los metodos comunes a los tres servicios son `Listar`, `Obtener` y
+`Contar`. Todas las respuestas incluyen un campo `instancia` con el nombre
+del contenedor que contesto, igual que el header `X-Instancia` del lado
+HTTP, para poder ver el balanceo.
+
+**Comunicacion entre servicios.** El servicio de tareas expone ademas el
+metodo `Resumen`, que es la unica operacion que necesita datos de mas de un
+servicio. Para contestarlo, tareas llama por gRPC a `usuarios.Contar` y a
+`categorias.Contar`. El codigo del cliente esta en
+`servicio-tareas/clientes.go`.
+
+**Comunicacion entre el load balancer y los servicios.** Esas llamadas no
+van directo a una instancia: van a nginx, que escoge una de las tres por
+round robin. Por eso las direcciones en el compose son `nginx:9001` y
+`nginx:9003`, no `usuarios-1` ni `categorias-2`. En nginx el reenvio se
+hace con `grpc_pass` sobre HTTP/2, con un upstream por servicio.
+
+La respuesta de `Resumen` trae tres campos de instancia: cual armo el
+resumen y cual contesto cada llamada. Si repites la llamada varias veces,
+esos nombres van rotando, que es la prueba de que el balanceo tambien
+aplica al trafico gRPC.
+
+El frontend tiene un boton **Resumen por gRPC** que muestra ese resultado.
+El navegador no habla gRPC, asi que llama al endpoint HTTP
+`/tareas/resumen`, y es el servicio de tareas el que hace las llamadas gRPC.
+
+## Pruebas con grpcurl
+
+grpcurl descubre los metodos por reflexion, que esta activada en los tres
+servicios, asi que no hace falta pasarle los archivos `.proto`.
+
+Si no tienes grpcurl instalado, esta forma no requiere instalar nada:
+
+```bash
+alias grpcurl='docker run --rm --network proyecto-distribuido_default fullstorydev/grpcurl:latest'
+```
+
+Con ese alias, usa `nginx` en lugar de `localhost` en los comandos de
+abajo, porque grpcurl corre dentro de la red de Docker.
+
+Con Homebrew: `brew install grpcurl`, y entonces los comandos van tal cual.
+
+```bash
+# Descubrir que servicios gRPC hay detras de cada puerto
+grpcurl -plaintext localhost:9001 list
+grpcurl -plaintext localhost:9002 list
+grpcurl -plaintext localhost:9003 list
+
+# Ver los metodos y los mensajes de un servicio
+grpcurl -plaintext localhost:9001 describe usuarios.Usuarios
+grpcurl -plaintext localhost:9001 describe usuarios.ListarResponse
+
+# Llamar a los metodos de usuarios
+grpcurl -plaintext -d '{}' localhost:9001 usuarios.Usuarios/Listar
+grpcurl -plaintext -d '{}' localhost:9001 usuarios.Usuarios/Contar
+grpcurl -plaintext -d '{"id": 1}' localhost:9001 usuarios.Usuarios/Obtener
+
+# Llamar a los metodos de categorias
+grpcurl -plaintext -d '{}' localhost:9003 categorias.Categorias/Contar
+
+# Llamar a los metodos de tareas
+grpcurl -plaintext -d '{}' localhost:9002 tareas.Tareas/Listar
+grpcurl -plaintext -d '{}' localhost:9002 tareas.Tareas/Contar
+
+# El resumen: esta llamada hace que tareas llame por gRPC a usuarios y a
+# categorias pasando por el balanceador
+grpcurl -plaintext -d '{}' localhost:9002 tareas.Tareas/Resumen
+
+# Repetirla varias veces deja ver el round robin sobre gRPC:
+# los campos de instancia van cambiando
+for i in 1 2 3 4 5 6; do
+  grpcurl -plaintext -d '{}' localhost:9002 tareas.Tareas/Resumen
+done
+```
+
+### Salida de las pruebas
+
+<!-- PRUEBAS -->
+
 ## Como correrlo
 
 Requisito unico: Docker Desktop instalado y corriendo.
@@ -188,23 +296,31 @@ docker compose down -v         # apagar y borrar la base de datos
 proyecto-distribuido/
 ├── docker-compose.yml
 ├── setup.sh
+├── generar-proto.sh    regenera el codigo Go desde los .proto
 ├── README.md
+├── proto/              contratos protobuf, uno por servicio
+│   ├── usuarios.proto
+│   ├── tareas.proto
+│   └── categorias.proto
 ├── frontend/
 │   ├── index.html
 │   ├── estilos.css
 │   ├── app.js
 │   └── Dockerfile
 ├── nginx/
-│   ├── nginx.conf     upstreams, round robin y enrutamiento
+│   ├── nginx.conf      upstreams HTTP y gRPC, round robin, enrutamiento
 │   └── Dockerfile
 ├── servicio-usuarios/
-│   ├── main.go        handlers HTTP y heartbeat
-│   ├── store.go       repositorio (acceso a datos)
-│   ├── consul.go      registro, health check y borrado en Consul
+│   ├── main.go         handlers HTTP y heartbeat
+│   ├── store.go        repositorio (acceso a datos)
+│   ├── consul.go       registro, health check y borrado en Consul
+│   ├── grpcserver.go   servidor gRPC
+│   ├── pb/             codigo generado desde los .proto
 │   ├── go.mod
-│   ├── go.sum
 │   └── Dockerfile
 ├── servicio-tareas/
+│   ├── clientes.go     cliente gRPC hacia usuarios y categorias
+│   └── ...             igual que usuarios, mas el metodo Resumen
 └── servicio-categorias/
 ```
 
@@ -217,3 +333,7 @@ instancia.
 
 La base de datos es un punto unico de falla: los tres servicios dependen de
 una sola instancia de PostgreSQL.
+
+El cliente gRPC de `clientes.go` abre una conexion nueva en cada llamada.
+Para produccion convendria mantener las conexiones abiertas y reutilizarlas,
+porque gRPC esta disenado para eso.

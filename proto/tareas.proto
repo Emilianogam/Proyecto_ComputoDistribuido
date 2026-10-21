@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+// Contrato gRPC del servicio de tareas.
+//
+// Ademas del CRUD basico, este servicio expone Resumen, que es la logica
+// de comunicacion entre servicios: para responderlo, tareas llama por gRPC
+// a usuarios y a categorias, pasando por el load balancer.
+
+package tareas;
+
+option go_package = "servicio-tareas/pb/tareaspb";
+
+service Tareas {
+  rpc Listar  (ListarRequest)  returns (ListarResponse);
+  rpc Obtener (ObtenerRequest) returns (ObtenerResponse);
+  rpc Contar  (ContarRequest)  returns (ContarResponse);
+  rpc Resumen (ResumenRequest) returns (ResumenResponse);
+}
+
+message Tarea {
+  int32  id         = 1;
+  string titulo     = 2;
+  bool   completada = 3;
+}
+
+message ListarRequest {}
+
+message ListarResponse {
+  repeated Tarea tareas = 1;
+  string instancia = 2;
+}
+
+message ObtenerRequest {
+  int32 id = 1;
+}
+
+message ObtenerResponse {
+  Tarea  tarea      = 1;
+  bool   encontrado = 2;
+  string instancia  = 3;
+}
+
+message ContarRequest {}
+
+message ContarResponse {
+  int32  total     = 1;
+  string instancia = 2;
+}
+
+message ResumenRequest {}
+
+// El resumen junta datos de los tres servicios. Los campos de instancia
+// dejan ver que contenedor contesto cada llamada, que es la prueba de que
+// las llamadas entre servicios tambien pasan por el balanceador.
+message ResumenResponse {
+  int32  usuarios            = 1;
+  int32  tareas              = 2;
+  int32  categorias          = 3;
+  string instancia           = 4;
+  string instancia_usuarios  = 5;
+  string instancia_categorias = 6;
+}

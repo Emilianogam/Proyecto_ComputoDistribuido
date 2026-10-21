@@ -77,6 +77,9 @@ services:
       INSTANCIA_ID: tareas-1
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      # Las llamadas entre servicios van al balanceador, no a una instancia.
+      USUARIOS_GRPC: nginx:9001
+      CATEGORIAS_GRPC: nginx:9003
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,6 +92,9 @@ services:
       INSTANCIA_ID: tareas-2
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      # Las llamadas entre servicios van al balanceador, no a una instancia.
+      USUARIOS_GRPC: nginx:9001
+      CATEGORIAS_GRPC: nginx:9003
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,6 +107,9 @@ services:
       INSTANCIA_ID: tareas-3
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      # Las llamadas entre servicios van al balanceador, no a una instancia.
+      USUARIOS_GRPC: nginx:9001
+      CATEGORIAS_GRPC: nginx:9003
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,7 +160,10 @@ services:
   nginx:
     build: ./nginx
     ports:
-      - "8000:8000"
+      - "8000:8000"   # API HTTP
+      - "9001:9001"   # gRPC usuarios
+      - "9002:9002"   # gRPC tareas
+      - "9003:9003"   # gRPC categorias
     restart: unless-stopped
     depends_on:
       consul:

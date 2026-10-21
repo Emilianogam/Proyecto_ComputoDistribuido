@@ -106,6 +106,13 @@ func tareaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// resumenHandler expone por HTTP el mismo resumen que el RPC Resumen.
+// Existe para que el frontend pueda mostrar el resultado de las llamadas
+// gRPC entre servicios sin tener que hablar gRPC desde el navegador.
+func resumenHandler(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(armarResumen(r.Context()))
+}
+
 func heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"servicio":  "tareas",
@@ -133,8 +140,17 @@ func main() {
 	registrarEnConsul("tareas", instanciaID, puerto)
 	go esperarApagado(instanciaID)
 
+
+	// Servidor gRPC, en paralelo al servidor HTTP.
+	puertoGRPC := os.Getenv("GRPC_PORT")
+	if puertoGRPC == "" {
+		puertoGRPC = "9090"
+	}
+	go arrancarGRPC(puertoGRPC)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/tareas", conHeaders(tareasHandler))
+	mux.HandleFunc("/tareas/resumen", conHeaders(resumenHandler))
 	mux.HandleFunc("/tareas/", conHeaders(tareaHandler))
 	mux.HandleFunc("/heartbeat", conHeaders(heartbeatHandler))
 

@@ -1,12 +1,14 @@
-FROM golang:1.22-alpine AS build
+FROM golang:1.23-alpine AS build
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY *.go ./
+COPY . .
+# go mod tidy resuelve las dependencias de gRPC y completa go.sum dentro
+# del contenedor, asi no hace falta tener Go instalado en la maquina.
+RUN go mod tidy
 RUN go build -o servicio .
 
 FROM alpine:latest
 WORKDIR /app
 COPY --from=build /app/servicio .
-EXPOSE 8080
+# 8080 es la API HTTP, 9090 la API gRPC
+EXPOSE 8080 9090
 CMD ["./servicio"]

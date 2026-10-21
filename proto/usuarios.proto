@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+// Contrato gRPC del servicio de usuarios.
+// Protobuf define los mensajes y el servicio; de aqui se genera el codigo
+// Go del servidor y del cliente con protoc.
+
+package usuarios;
+
+option go_package = "servicio-usuarios/pb/usuariospb";
+
+service Usuarios {
+  rpc Listar  (ListarRequest)  returns (ListarResponse);
+  rpc Obtener (ObtenerRequest) returns (ObtenerResponse);
+  rpc Contar  (ContarRequest)  returns (ContarResponse);
+}
+
+message Usuario {
+  int32  id     = 1;
+  string nombre = 2;
+  string email  = 3;
+}
+
+message ListarRequest {}
+
+message ListarResponse {
+  repeated Usuario usuarios = 1;
+  // instancia dice que contenedor atendio la llamada, igual que el
+  // header X-Instancia del lado HTTP.
+  string instancia = 2;
+}
+
+message ObtenerRequest {
+  int32 id = 1;
+}
+
+message ObtenerResponse {
+  Usuario usuario    = 1;
+  bool    encontrado = 2;
+  string  instancia  = 3;
+}
+
+message ContarRequest {}
+
+message ContarResponse {
+  int32  total     = 1;
+  string instancia = 2;
+}

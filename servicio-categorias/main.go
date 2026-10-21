@@ -133,6 +133,14 @@ func main() {
 	registrarEnConsul("categorias", instanciaID, puerto)
 	go esperarApagado(instanciaID)
 
+
+	// Servidor gRPC, en paralelo al servidor HTTP.
+	puertoGRPC := os.Getenv("GRPC_PORT")
+	if puertoGRPC == "" {
+		puertoGRPC = "9090"
+	}
+	go arrancarGRPC(puertoGRPC)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/categorias", conHeaders(categoriasHandler))
 	mux.HandleFunc("/categorias/", conHeaders(categoriaHandler))

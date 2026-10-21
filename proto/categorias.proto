@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+// Contrato gRPC del servicio de categorias.
+
+package categorias;
+
+option go_package = "servicio-categorias/pb/categoriaspb";
+
+service Categorias {
+  rpc Listar  (ListarRequest)  returns (ListarResponse);
+  rpc Obtener (ObtenerRequest) returns (ObtenerResponse);
+  rpc Contar  (ContarRequest)  returns (ContarResponse);
+}
+
+message Categoria {
+  int32  id     = 1;
+  string nombre = 2;
+  string color  = 3;
+}
+
+message ListarRequest {}
+
+message ListarResponse {
+  repeated Categoria categorias = 1;
+  string instancia = 2;
+}
+
+message ObtenerRequest {
+  int32 id = 1;
+}
+
+message ObtenerResponse {
+  Categoria categoria  = 1;
+  bool      encontrado = 2;
+  string    instancia  = 3;
+}
+
+message ContarRequest {}
+
+message ContarResponse {
+  int32  total     = 1;
+  string instancia = 2;
+}

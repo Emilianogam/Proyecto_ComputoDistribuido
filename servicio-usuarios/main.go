@@ -133,6 +133,14 @@ func main() {
 	registrarEnConsul("usuarios", instanciaID, puerto)
 	go esperarApagado(instanciaID)
 
+
+	// Servidor gRPC, en paralelo al servidor HTTP.
+	puertoGRPC := os.Getenv("GRPC_PORT")
+	if puertoGRPC == "" {
+		puertoGRPC = "9090"
+	}
+	go arrancarGRPC(puertoGRPC)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/usuarios", conHeaders(usuariosHandler))
 	mux.HandleFunc("/usuarios/", conHeaders(usuarioHandler))

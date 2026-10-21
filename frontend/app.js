@@ -88,6 +88,20 @@ async function probarBalanceo() {
   }
 }
 
+// cargarResumen le pide el resumen al servicio de tareas. Para contestarlo,
+// tareas llama por gRPC a usuarios y a categorias pasando por el balanceador.
+// Por eso el resultado dice que instancia de cada servicio contesto.
+async function cargarResumen() {
+  const resp = await fetch(PROXY + "/tareas/resumen");
+  const r = await resp.json();
+
+  document.getElementById("bitacora").textContent =
+    "resumen armado con llamadas gRPC entre servicios\n" +
+    "usuarios:   " + r.usuarios + "   (respondio " + r.instancia_usuarios + ")\n" +
+    "tareas:     " + r.tareas + "   (lo armo " + r.instancia + ")\n" +
+    "categorias: " + r.categorias + "   (respondio " + r.instancia_categorias + ")";
+}
+
 // ---------- Usuarios ----------
 
 async function cargarUsuarios() {
