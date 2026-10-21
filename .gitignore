@@ -2,3 +2,4 @@
 *.log
 servicio
 gateway/gateway
+Claude outputs/
