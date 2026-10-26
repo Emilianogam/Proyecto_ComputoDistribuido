@@ -9,6 +9,7 @@ Proyecto final de Computo Distribuido.
 | 1 | Frontend, 3 servicios con 3 instancias cada uno, base de datos, middleware propio en Go con service discovery estatico y round robin |
 | 2 | Service discovery dinamico con **Consul**, y **nginx** como reverse proxy, gateway y load balancer |
 | 3 | **gRPC con protobuf** en la capa de backends: comunicacion entre servicios y entre el load balancer y los servicios |
+| 4 | **Apache Kafka**: cola de mensajeria asincrona con un topico por servicio |
 
 En la entrega 2 el middleware escrito en Go se reemplazo por nginx, y el
 archivo estatico `services.json` se reemplazo por el registro de Consul.
@@ -16,6 +17,10 @@ archivo estatico `services.json` se reemplazo por el registro de Consul.
 En la entrega 3 cada servicio expone, ademas de su API HTTP, una API gRPC
 definida con protobuf. La API HTTP se conserva porque el navegador no habla
 gRPC; las llamadas entre servicios si usan gRPC.
+
+En la entrega 4 se agrego Kafka. gRPC y Kafka resuelven cosas distintas y
+conviven: gRPC es sincrono, el que llama espera la respuesta; Kafka es
+asincrono, el que publica no espera a nadie.
 
 ## Arquitectura actual
 
@@ -39,6 +44,12 @@ gRPC; las llamadas entre servicios si usan gRPC.
 
    Consul (localhost:8500) registra las 9 instancias
    y les hace health check cada 10 segundos.
+
+   Kafka recibe los eventos que publican los servicios:
+
+        usuarios-*  ->  usuarios.eventos    \\
+        tareas-*    ->  tareas.eventos       >--> auditoria
+        categorias-* -> categorias.eventos  //
 ```
 
 Cada instancia escucha en dos puertos: 8080 para HTTP y 9090 para gRPC.
@@ -52,6 +63,9 @@ nginx balancea los dos protocolos.
 | 9002 | gRPC  | las 3 instancias de tareas |
 | 9003 | gRPC  | las 3 instancias de categorias |
 | 8500 | HTTP  | interfaz de Consul |
+
+Kafka y el servicio de auditoria no exponen puerto al host: solo se usan
+desde la red interna. La auditoria se consulta por nginx, en `/eventos`.
 
 Catorce contenedores. Solo tres exponen puerto al exterior: el frontend
 (3000), nginx (8000) y la interfaz de Consul (8500). Los nueve servicios y la
@@ -227,7 +241,212 @@ done
 
 ### Salida de las pruebas
 
-<!-- PRUEBAS -->
+Pruebas corridas el 21 de octubre de 2026, con el sistema levantado y la
+base con 6 usuarios, 8 tareas y 4 categorias.
+
+**1. Descubrimiento por reflexion.** Confirma que el servicio gRPC esta
+expuesto detras del balanceador y que la reflexion funciona.
+
+```
+$ grpcurl -plaintext nginx:9001 list
+grpc.reflection.v1.ServerReflection
+grpc.reflection.v1alpha.ServerReflection
+usuarios.Usuarios
+```
+
+**2. Llamada a un metodo.** El campo `instancia` dice que contenedor
+contesto, igual que el header `X-Instancia` del lado HTTP.
+
+```
+$ grpcurl -plaintext -d '{}' nginx:9001 usuarios.Usuarios/Contar
+{
+  "total": 6,
+  "instancia": "usuarios-1"
+}
+```
+
+**3. Comunicacion entre servicios.** Esta llamada llega a una instancia de
+tareas, que a su vez llama por gRPC a usuarios y a categorias a traves del
+balanceador.
+
+```
+$ grpcurl -plaintext -d '{}' nginx:9002 tareas.Tareas/Resumen
+{
+  "usuarios": 6,
+  "tareas": 8,
+  "categorias": 4,
+  "instancia": "tareas-2",
+  "instanciaUsuarios": "usuarios-2",
+  "instanciaCategorias": "categorias-2"
+}
+```
+
+**4. Balanceo sobre gRPC.** La misma consulta hecha antes por HTTP
+(`GET /tareas/resumen`) habia caido en `tareas-1`, `usuarios-1` y
+`categorias-1`. La llamada gRPC de arriba, hecha despues, cayo en las tres
+instancias numero 2. Los contadores de round robin de nginx avanzaron entre
+una y otra, lo que confirma que el balanceo aplica igual al trafico gRPC que
+al HTTP, y que las llamadas entre servicios tambien pasan por el
+balanceador.
+
+```
+$ curl -s http://localhost:8000/tareas/resumen
+{"usuarios":6,"tareas":8,"categorias":4,"instancia":"tareas-1",
+ "instancia_usuarios":"usuarios-1","instancia_categorias":"categorias-1"}
+```
+
+Nota: grpcurl imprime los nombres de campo en lowerCamelCase
+(`instanciaUsuarios`) porque asi los serializa protobuf a JSON. En el
+`.proto` el campo se llama `instancia_usuarios`.
+
+Si no tienes grpcurl instalado, los comandos de arriba se corrieron asi:
+
+```bash
+docker run --rm --network proyecto-distribuido_default \
+  fullstorydev/grpcurl:latest -plaintext nginx:9001 list
+```
+
+
+### Cola de mensajeria: Apache Kafka
+
+Kafka corre en su propio contenedor, en modo KRaft, que es un solo nodo
+haciendo de broker y de controlador sin necesidad de Zookeeper.
+
+**Los topicos.** Hay uno por servicio, cada uno con tres particiones:
+
+| Topico | Lo publica | Que lleva |
+|---|---|---|
+| `usuarios.eventos`   | las 3 instancias de usuarios   | altas, cambios y bajas de usuarios |
+| `tareas.eventos`     | las 3 instancias de tareas     | altas, cambios y bajas de tareas |
+| `categorias.eventos` | las 3 instancias de categorias | altas, cambios y bajas de categorias |
+
+Son tres particiones porque hay tres instancias publicando en cada topico.
+Los topicos los crea el servicio de auditoria al arrancar.
+
+**El productor** esta en `eventos.go` de cada servicio. Cada vez que un
+handler crea, actualiza o borra un registro, publica un mensaje JSON en el
+topico de su servicio:
+
+```json
+{
+  "servicio": "usuarios",
+  "accion": "creado",
+  "id": 7,
+  "detalle": "Emiliano",
+  "instancia": "usuarios-2",
+  "momento": "2026-10-23T18:04:11Z"
+}
+```
+
+Lo que hace que sea **asincrono** es que la publicacion ocurre en una
+goroutine aparte: la peticion HTTP del usuario ya recibio su respuesta
+cuando el mensaje sale hacia Kafka. Si Kafka estuviera caido, el CRUD
+seguiria funcionando y solo se registraria el error en el log. Por eso los
+servicios no declaran `depends_on` sobre Kafka: no lo necesitan para
+arrancar.
+
+La llave del mensaje es el id del registro, con un balanceador `Hash`. Eso
+manda todos los eventos de un mismo registro a la misma particion, donde
+Kafka garantiza el orden. Asi un "creado" nunca llega despues de su
+"borrado".
+
+**El consumidor** es un servicio nuevo, `servicio-auditoria`. No tiene base
+de datos ni CRUD: esta suscrito a los tres topicos con el grupo de
+consumidores `auditoria` y guarda en memoria los ultimos cien eventos. Los
+expone en `GET /eventos`, que es lo que muestra el boton **Eventos de
+Kafka** del frontend.
+
+Como usa un grupo de consumidores, Kafka lleva el control de hasta donde
+leyo. Si la auditoria se reinicia, retoma donde se quedo en vez de volver a
+procesar todo.
+
+**Por que esto importa en un sistema distribuido.** El productor y el
+consumidor no se conocen. Los servicios no saben que existe la auditoria, y
+si manana se agregan dos consumidores mas, nadie toca el codigo de los
+servicios. Eso es desacoplamiento, y es lo que una llamada gRPC o HTTP no
+da, porque ahi el que llama tiene que saber a quien llama y esperar a que
+conteste.
+
+## Pruebas de Kafka
+
+```bash
+# Los tres topicos existen
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:9092 --list
+
+# Detalle de un topico: particiones y replicas
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:9092 --describe --topic usuarios.eventos
+
+# Ver los mensajes que ya pasaron por una cola
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka:9092 --topic usuarios.eventos --from-beginning
+
+# Crear algo y ver el evento aparecer
+curl -X POST http://localhost:8000/usuarios \
+  -H "Content-Type: application/json" \
+  -d '{"nombre":"Prueba Kafka","email":"kafka@up.edu.mx"}'
+
+# Lo que consumio la auditoria
+curl -s http://localhost:8000/eventos
+
+# El grupo de consumidores y su lag
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka:9092 --describe --group auditoria
+
+# Ver el consumo en vivo
+docker compose logs -f auditoria
+```
+
+### Salida de las pruebas de Kafka
+
+Pruebas corridas el 26 de octubre de 2026.
+
+**1. Kafka y el consumidor arriba.**
+
+```
+$ docker compose ps
+NAME                               STATUS
+proyecto-distribuido-kafka-1       Up 56 seconds (healthy)
+proyecto-distribuido-auditoria-1   Up 47 seconds
+```
+
+**2. Los tres topicos existen.** `__consumer_offsets` lo crea Kafka solo
+para llevar el control de los grupos de consumidores.
+
+```
+$ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+    --bootstrap-server kafka:9092 --list
+__consumer_offsets
+categorias.eventos
+tareas.eventos
+usuarios.eventos
+```
+
+**3. Publicar un evento.** Se crea un usuario por la API HTTP normal. El
+servicio responde de inmediato; la publicacion en Kafka ocurre aparte.
+
+```
+$ curl -X POST http://localhost:8000/usuarios \
+    -H "Content-Type: application/json" \
+    -d '{"nombre":"Prueba Kafka","email":"kafka@up.edu.mx"}'
+{"id":7,"nombre":"Prueba Kafka","email":"kafka@up.edu.mx"}
+```
+
+**4. El consumidor ya lo tenia.** Tres segundos despues, el evento aparece
+en la auditoria, con el topico y la particion de donde salio.
+
+```
+$ curl -s http://localhost:8000/eventos
+[{"servicio":"usuarios","accion":"creado","id":7,"detalle":"Prueba Kafka",
+  "instancia":"usuarios-1","momento":"2026-10-26T14:04:52.338293004Z",
+  "topico":"usuarios.eventos","particion":0}]
+```
+
+El campo `instancia` dice que contenedor publico el evento y el campo
+`particion` a que particion del topico le toco, segun la llave del mensaje.
+
+
 
 ## Como correrlo
 
@@ -315,13 +534,18 @@ proyecto-distribuido/
 │   ├── store.go        repositorio (acceso a datos)
 │   ├── consul.go       registro, health check y borrado en Consul
 │   ├── grpcserver.go   servidor gRPC
+│   ├── eventos.go      productor de Kafka
 │   ├── pb/             codigo generado desde los .proto
 │   ├── go.mod
 │   └── Dockerfile
 ├── servicio-tareas/
 │   ├── clientes.go     cliente gRPC hacia usuarios y categorias
 │   └── ...             igual que usuarios, mas el metodo Resumen
-└── servicio-categorias/
+├── servicio-categorias/
+└── servicio-auditoria/
+    ├── main.go         consumidor de los tres topicos de Kafka
+    ├── go.mod
+    └── Dockerfile
 ```
 
 ## Pendientes para la entrega final

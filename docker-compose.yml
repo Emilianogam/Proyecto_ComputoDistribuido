@@ -33,6 +33,50 @@ services:
       timeout: 3s
       retries: 10
 
+
+  # ---------- Cola de mensajeria ----------
+  # Kafka en modo KRaft: un solo nodo que hace de broker y de controlador,
+  # sin Zookeeper. No expone puerto al host, solo se usa desde la red
+  # interna. El heap va limitado para no comerse la memoria de la laptop.
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # Los listeners se atan al nombre del contenedor, no a 0.0.0.0.
+      # Kafka anuncia el listener del controlador tal como se declara aqui,
+      # y 0.0.0.0 no es una direccion anunciable.
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_HEAP_OPTS: -Xmx512M -Xms256M
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # ---------- Consumidor de las colas ----------
+  # Crea los tres topicos, se suscribe a ellos y guarda los ultimos eventos.
+  # Es el unico que espera a que Kafka este listo; los demas servicios
+  # arrancan sin esperarlo, porque publicar es asincrono.
+  auditoria:
+    build: ./servicio-auditoria
+    environment:
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
   # ---------- Servicio A: usuarios (3 instancias) ----------
   usuarios-1:
     build: ./servicio-usuarios
@@ -40,6 +84,7 @@ services:
       INSTANCIA_ID: usuarios-1
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,6 +97,7 @@ services:
       INSTANCIA_ID: usuarios-2
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,6 +110,7 @@ services:
       INSTANCIA_ID: usuarios-3
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,6 +124,7 @@ services:
       INSTANCIA_ID: tareas-1
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
       # Las llamadas entre servicios van al balanceador, no a una instancia.
       USUARIOS_GRPC: nginx:9001
       CATEGORIAS_GRPC: nginx:9003
@@ -92,6 +140,7 @@ services:
       INSTANCIA_ID: tareas-2
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
       # Las llamadas entre servicios van al balanceador, no a una instancia.
       USUARIOS_GRPC: nginx:9001
       CATEGORIAS_GRPC: nginx:9003
@@ -107,6 +156,7 @@ services:
       INSTANCIA_ID: tareas-3
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
       # Las llamadas entre servicios van al balanceador, no a una instancia.
       USUARIOS_GRPC: nginx:9001
       CATEGORIAS_GRPC: nginx:9003
@@ -123,6 +173,7 @@ services:
       INSTANCIA_ID: categorias-1
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,6 +186,7 @@ services:
       INSTANCIA_ID: categorias-2
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,6 +199,7 @@ services:
       INSTANCIA_ID: categorias-3
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/distribuidos?sslmode=disable
       CONSUL_URL: http://consul:8500
+      KAFKA_BROKERS: kafka:9092
     depends_on:
       postgres:
         condition: service_healthy
@@ -185,6 +238,8 @@ services:
       categorias-2:
         condition: service_started
       categorias-3:
+        condition: service_started
+      auditoria:
         condition: service_started
 
   # ---------- Frontend ----------

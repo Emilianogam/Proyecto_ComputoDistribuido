@@ -102,6 +102,35 @@ async function cargarResumen() {
     "categorias: " + r.categorias + "   (respondio " + r.instancia_categorias + ")";
 }
 
+// cargarEventos pide al servicio de auditoria los ultimos eventos que
+// consumio de las colas de Kafka. Cada vez que creas, actualizas o borras
+// algo, el servicio correspondiente publica un evento en su topico y la
+// auditoria lo consume de forma asincrona.
+async function cargarEventos() {
+  const resp = await fetch(PROXY + "/eventos");
+  const eventos = await resp.json();
+
+  const b = document.getElementById("bitacora");
+
+  if (!eventos || eventos.length === 0) {
+    b.textContent = "todavia no hay eventos en las colas; crea o borra algo";
+    return;
+  }
+
+  b.textContent = eventos
+    .slice(0, 15)
+    .map(
+      (e) =>
+        e.topico +
+        "[" + e.particion + "]  " +
+        e.accion.padEnd(12) +
+        " id=" + e.id +
+        "  " + (e.detalle || "") +
+        "   (publico " + e.instancia + ")"
+    )
+    .join("\n");
+}
+
 // ---------- Usuarios ----------
 
 async function cargarUsuarios() {

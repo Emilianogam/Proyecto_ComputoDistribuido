@@ -51,6 +51,7 @@ func tareasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no se pudo crear", http.StatusInternalServerError)
 			return
 		}
+		publicar("creado", t.ID, t.Titulo)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(t)
 
@@ -92,6 +93,7 @@ func tareaHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no encontrado", http.StatusNotFound)
 			return
 		}
+		publicar("actualizado", t.ID, t.Titulo)
 		json.NewEncoder(w).Encode(t)
 
 	case http.MethodDelete:
@@ -99,6 +101,7 @@ func tareaHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no encontrado", http.StatusNotFound)
 			return
 		}
+		publicar("borrado", id, "")
 		w.WriteHeader(http.StatusNoContent)
 
 	default:
@@ -147,6 +150,10 @@ func main() {
 		puertoGRPC = "9090"
 	}
 	go arrancarGRPC(puertoGRPC)
+
+	// Productor de Kafka: publica un evento en tareas.eventos cada vez
+	// que cambia un registro.
+	arrancarKafka("tareas")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/tareas", conHeaders(tareasHandler))

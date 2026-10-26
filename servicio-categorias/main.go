@@ -51,6 +51,7 @@ func categoriasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no se pudo crear", http.StatusInternalServerError)
 			return
 		}
+		publicar("creado", u.ID, u.Nombre)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(u)
 
@@ -92,6 +93,7 @@ func categoriaHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no encontrado", http.StatusNotFound)
 			return
 		}
+		publicar("actualizado", u.ID, u.Nombre)
 		json.NewEncoder(w).Encode(u)
 
 	case http.MethodDelete:
@@ -99,6 +101,7 @@ func categoriaHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no encontrado", http.StatusNotFound)
 			return
 		}
+		publicar("borrado", id, "")
 		w.WriteHeader(http.StatusNoContent)
 
 	default:
@@ -140,6 +143,10 @@ func main() {
 		puertoGRPC = "9090"
 	}
 	go arrancarGRPC(puertoGRPC)
+
+	// Productor de Kafka: publica un evento en categorias.eventos cada vez
+	// que cambia un registro.
+	arrancarKafka("categorias")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/categorias", conHeaders(categoriasHandler))
